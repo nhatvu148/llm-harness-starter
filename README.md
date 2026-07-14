@@ -60,7 +60,7 @@ uv sync
 cp .env.example .env                     # add your OPENAI_API_KEY
 
 # One-time: embed the example docs into the vector store
-task index                               # downloads a small embedding model on first run
+task index                               # embeds the docs via OpenAI (uses your key)
 
 # Run the harness server, then chat with it (two terminals)
 task run:api                             # starts the FastAPI server

@@ -1,9 +1,10 @@
 """Retrieval seam — the RAG layer ("specialize" with the right facts).
 
-Default store: Chroma (persistent, local). Embeddings use Chroma's built-in
-model (downloaded once on first index), so retrieval needs no API key. Swap
-this class to use Qdrant, pgvector, etc. — only ``index`` and ``search`` are
-called.
+Default store: Chroma (persistent, local) with **OpenAI embeddings** — no large
+local model download, so ``task index`` doesn't hang on a slow connection (you
+already need ``OPENAI_API_KEY`` for the model). For a fully offline setup, pass
+a ``SentenceTransformerEmbeddingFunction`` instead. Swap the whole class to use
+Qdrant, pgvector, etc. — only ``index`` and ``search`` are called.
 """
 
 import glob
@@ -28,11 +29,28 @@ def _chunk(text: str, size: int = 800) -> list[str]:
 
 
 class Retriever:
-    def __init__(self, persist_dir: str = ".chroma", collection: str = "docs"):
+    def __init__(
+        self,
+        persist_dir: str = ".chroma",
+        collection: str = "docs",
+        embedding_function=None,
+    ):
         import chromadb  # imported lazily so importing this module stays cheap
+        from chromadb.utils import embedding_functions
+
+        if embedding_function is None:
+            # OpenAI embeddings: no local model download, so indexing never
+            # hangs on a slow connection. For offline use, pass
+            # embedding_functions.SentenceTransformerEmbeddingFunction(...).
+            embedding_function = embedding_functions.OpenAIEmbeddingFunction(
+                api_key=os.environ.get("OPENAI_API_KEY"),
+                model_name=os.environ.get("EMBED_MODEL", "text-embedding-3-small"),
+            )
 
         self.client = chromadb.PersistentClient(path=persist_dir)
-        self.collection = self.client.get_or_create_collection(collection)
+        self.collection = self.client.get_or_create_collection(
+            collection, embedding_function=embedding_function
+        )
 
     def index(self, docs_dir: str, chunk_size: int = 800) -> int:
         """(Re)index every .md/.txt file under ``docs_dir``. Returns chunk count."""

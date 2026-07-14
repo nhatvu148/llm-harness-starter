@@ -2,7 +2,11 @@
 
 import os
 
+from dotenv import load_dotenv
+
 from retrieval import Retriever
+
+load_dotenv()
 
 DOCS_DIR = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "examples", "docs")
