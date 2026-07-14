@@ -30,7 +30,7 @@ PACKAGES = [
 APP_FILE = os.path.join("src", "api.py")
 OUTPUT_FILE = os.path.join("tools", "temp_combined.py")
 
-BOOTSTRAP = '''import sys as _sys
+BOOTSTRAP = """import sys as _sys
 import types as _types
 
 
@@ -54,7 +54,7 @@ def _register_submodule(name, source):
 
 def _exec_init(name, source):
     exec(compile(source, name, "exec"), _sys.modules[name].__dict__)
-'''
+"""
 
 
 def _read(path):
@@ -81,8 +81,7 @@ def main():
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         f.write("\n".join(parts))
     print(
-        f"Bundled {len(PACKAGES)} packages + api.py -> "
-        f"'{os.path.abspath(OUTPUT_FILE)}'"
+        f"Bundled {len(PACKAGES)} packages + api.py -> '{os.path.abspath(OUTPUT_FILE)}'"
     )
 
 

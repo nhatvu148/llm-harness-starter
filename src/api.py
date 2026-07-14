@@ -27,7 +27,14 @@ BASE_SYSTEM = (
     "answer is not in the context, say so instead of guessing."
 )
 MAX_TOOL_ROUNDS = 4
-PROCEDURES_DIR = os.path.join(os.path.dirname(__file__), "procedures")
+# Resolve relative to this file when run normally; when the code is embedded in
+# the native binary there is no __file__, so fall back to ./src (cwd = repo root).
+_HERE = (
+    os.path.dirname(os.path.abspath(__file__))
+    if "__file__" in globals()
+    else os.path.abspath("src")
+)
+PROCEDURES_DIR = os.path.join(_HERE, "procedures")
 
 app = FastAPI(title="LLM Harness Starter")
 provider = default_provider()

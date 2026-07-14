@@ -24,6 +24,15 @@ set(EXECUTABLE_NAME "main" CACHE STRING "Name of the executable target")
 
 find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
 
+# The base prefix holds the standard library. We set it as PYTHONHOME in
+# main.cpp so the embedded interpreter can find encodings/stdlib reliably
+# (a venv itself contains no stdlib, so auto-detection is unreliable).
+execute_process(
+    COMMAND "${Python3_EXECUTABLE}" -c "import sys; print(sys.base_prefix)"
+    OUTPUT_VARIABLE PYTHON_BASE_PREFIX
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+
 include_directories(${Python3_INCLUDE_DIRS})
 
 add_subdirectory(src)

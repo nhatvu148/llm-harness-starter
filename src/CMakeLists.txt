@@ -15,10 +15,12 @@ target_link_libraries(${EXECUTABLE_NAME}
     ${Python3_LIBRARIES}
 )
 
-# Point the runtime PYTHONPATH at the site-packages for the *linked* Python
-# version, so the embedded interpreter and its deps can never mismatch.
+# Bake in absolute paths so the embedded interpreter finds its stdlib (PY_HOME)
+# and this project's deps (PY_VENV_SITE_PACKAGES) regardless of the working
+# directory or CMake generator (Makefiles vs Xcode).
 target_compile_definitions(${EXECUTABLE_NAME} PRIVATE
-    PY_VENV_SITE_PACKAGES=".venv/lib/python${Python3_VERSION_MAJOR}.${Python3_VERSION_MINOR}/site-packages"
+    PY_HOME="${PYTHON_BASE_PREFIX}"
+    PY_VENV_SITE_PACKAGES="${CMAKE_SOURCE_DIR}/.venv/lib/python${Python3_VERSION_MAJOR}.${Python3_VERSION_MINOR}/site-packages"
 )
 
 if(ENABLE_WARNINGS)
