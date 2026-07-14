@@ -1,5 +1,7 @@
 # LLM Harness Starter
 
+[![CI](https://github.com/nhatvu148/llm-harness-starter/actions/workflows/ci.yml/badge.svg)](https://github.com/nhatvu148/llm-harness-starter/actions/workflows/ci.yml)
+
 > A clone-and-go scaffold for building a **grounded LLM agent** — the harness, not just the model.
 > Wire up retrieval, tools, and procedures around any model, and (optionally) ship the whole thing as a **native binary**.
 

@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  python:
+    name: Python — lint + tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Sync dependencies
+        run: uv sync
+
+      - name: Lint & format check (ruff)
+        run: |
+          uvx ruff check src/
+          uvx ruff format --check src/
+
+      - name: Smoke test — tools + procedures (no API key)
+        run: |
+          PYTHONPATH=src uv run python - <<'PY'
+          from tools import call, definitions
+          assert [d["function"]["name"] for d in definitions()] == ["calculate"]
+          assert call("calculate", {"expression": "88966 * 0.92"}) == "81848.72"
+          assert call("calculate", {"expression": "__import__('os')"}).startswith("Error")
+          from procedures import load
+          assert "calculate" in load("src/procedures", "total price")
+          print("smoke OK")
+          PY
+
+      - name: Bundler test — all four packages register
+        run: |
+          uv run tools/combine_files.py
+          PYTHONPATH=src uv run python - <<'PY'
+          blob = open("tools/temp_combined.py").read()
+          exec(blob.split("# ----- api.py")[0])
+          import providers, retrieval, tools, procedures
+          assert providers.default_provider and retrieval.Retriever
+          assert tools.definitions() and procedures.load
+          print("bundle imports OK")
+          PY
+
+  native-macos:
+    name: Native binary — build + health check (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Sync dependencies (creates .venv)
+        run: uv sync
+
+      - name: Regenerate embedded Python blob
+        run: |
+          uv run tools/combine_files.py
+          uv run tools/update_main_cpp.py
+
+      - name: Build native binary (CMake)
+        run: |
+          cmake -S . -B build -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+
+      # A dummy key lets the harness boot and /health respond; no OpenAI call is
+      # made for /health, so no real secret is needed in CI.
+      - name: Smoke-test the binary (/health)
+        env:
+          OPENAI_API_KEY: sk-dummy
+        run: |
+          ./build/src/main &
+          BIN_PID=$!
+          curl -s --retry 20 --retry-delay 1 --retry-connrefused --max-time 3 \
+            http://localhost:23239/health -o health.txt || true
+          kill "$BIN_PID" 2>/dev/null || true
+          echo "response: $(cat health.txt)"
+          grep -q healthy health.txt
