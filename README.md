@@ -17,22 +17,43 @@ Which means you can take a cheaper, smaller model and — with good retrieval, s
 
 ### Three layers
 
-```
-        ┌─────────────────────────────────────────────┐
-        │  PROCEDURES + RETRIEVAL  —  "it specializes" │
-        │  RAG feeds the right facts; procedures        │
-        │  encode the how-to for your domain            │
-        │   ┌───────────────────────────────────────┐  │
-        │   │  TOOLS  —  "it acts"                   │  │
-        │   │  run code, query a DB, operate an app  │  │
-        │   │   ┌─────────────────────────────────┐  │  │
-        │   │   │  MODEL  —  "it thinks"          │  │  │
-        │   │   │  any provider, swappable        │  │  │
-        │   │   └─────────────────────────────────┘  │  │
-        │   └───────────────────────────────────────┘  │
-        └─────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    Q([User request]) --> H
 
-        Models think.  Tools act.  Retrieval + procedures specialize.
+    subgraph H["THE HARNESS — where accuracy is engineered"]
+        direction LR
+        RAG["RAG<br/>retrieves the right facts"]
+        PROC["Procedures / Skills<br/>the how-to for your domain"]
+        TOOLS["Tools · MCP<br/>acts: run code, query, operate"]
+    end
+
+    H --> M["Model — thinks<br/>(swappable · even a cheap one)"]
+    M --> A([Grounded, accurate answer])
+
+    N["Complementary layers, NOT competitors —<br/>Tools ACT · RAG supplies FACTS · Procedures define the WORKFLOW"]
+    H -.- N
+```
+
+_Models think. Tools act. Retrieval + procedures specialize._
+
+Under the hood it's a **loop**, not a straight line — RAG and procedures assemble the prompt, then the model reasons, calls a tool, reads the result, and reasons again until the answer is ready (this is what `run_turn()` in `src/api.py` does):
+
+```mermaid
+flowchart TB
+    Q([User request]) --> CTX
+
+    subgraph CTX["Assemble the prompt — specialize"]
+        direction LR
+        RAG["RAG<br/>retrieve the right facts"]
+        PROC["Procedures / Skills<br/>load the how-to"]
+    end
+
+    CTX --> M["Model — think<br/>(swappable · even a cheap one)"]
+    M --> D{"Needs a tool?"}
+    D -->|yes| T["Tools · MCP — act<br/>run code, query, operate"]
+    T -->|result| M
+    D -->|no| A([Grounded, accurate answer])
 ```
 
 | Layer | Role | What it does |
