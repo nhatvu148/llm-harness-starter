@@ -15,52 +15,35 @@ The insight this scaffold is built on:
 
 Which means you can take a cheaper, smaller model and — with good retrieval, solid tool execution, and well-written procedures — get it to punch well above its weight. That's engineering, not a downgrade, and it's where most of the real value lives.
 
-### Three layers
+### The four seams
+
+Four swappable pieces compose into a grounded answer. RAG and procedures assemble the prompt; the model reasons and calls tools in a **loop** until it's done (exactly what `run_turn()` in `src/api.py` does):
 
 ```mermaid
 flowchart TB
-    Q([User request]) --> H
+    Q([User request]) --> RAG
+    Q --> PROC
 
-    subgraph H["THE HARNESS — where accuracy is engineered"]
-        direction LR
-        RAG["RAG<br/>retrieves the right facts"]
-        PROC["Procedures / Skills<br/>the how-to for your domain"]
-        TOOLS["Tools · MCP<br/>acts: run code, query, operate"]
-    end
+    RAG["RAG — retrieves<br/>the right facts from your docs"]
+    PROC["Procedures / Skills — specializes<br/>your domain's steps and rules"]
 
-    H --> M["Model — thinks<br/>(swappable · even a cheap one)"]
-    M --> A([Grounded, accurate answer])
+    RAG --> M
+    PROC --> M
 
-    N["Complementary layers, NOT competitors —<br/>Tools ACT · RAG supplies FACTS · Procedures define the WORKFLOW"]
-    H -.- N
-```
-
-_Models think. Tools act. Retrieval + procedures specialize._
-
-Under the hood it's a **loop**, not a straight line — RAG and procedures assemble the prompt, then the model reasons, calls a tool, reads the result, and reasons again until the answer is ready (this is what `run_turn()` in `src/api.py` does):
-
-```mermaid
-flowchart TB
-    Q([User request]) --> CTX
-
-    subgraph CTX["Assemble the prompt — specialize"]
-        direction LR
-        RAG["RAG<br/>retrieve the right facts"]
-        PROC["Procedures / Skills<br/>load the how-to"]
-    end
-
-    CTX --> M["Model — think<br/>(swappable · even a cheap one)"]
-    M --> D{"Needs a tool?"}
-    D -->|yes| T["Tools · MCP — act<br/>run code, query, operate"]
+    M["Model — thinks<br/>swappable · even a cheap one"]
+    M --> D{"Needs to act?"}
+    D -->|yes| T["Tools · MCP — acts<br/>run code, query, operate"]
     T -->|result| M
     D -->|no| A([Grounded, accurate answer])
 ```
+
+_Model thinks · Tools act · RAG retrieves · Procedures specialize — complementary seams, not competitors._
 
 | Layer | Role | What it does |
 |---|---|---|
 | **Model** | *thinks* | The reasoning engine. Swappable — OpenAI today, anything tomorrow. |
 | **Tools** (MCP-compatible) | *acts* | Lets the model actually DO things: run code, hit an API, operate a system. Reading a doc changes nothing — executing an action does. Tool defs use the standard JSON-schema shape, so they can be served over MCP later. |
-| **Retrieval (RAG)** | *specializes* | Semantic search feeds the model the RIGHT reference knowledge at the right moment, instead of stuffing everything into the prompt. |
+| **Retrieval (RAG)** | *retrieves* | Semantic search feeds the model the RIGHT reference knowledge at the right moment, instead of stuffing everything into the prompt. |
 | **Procedures ("skills")** | *specializes* | Curated how-to text: the steps, rules, and gotchas of your specific domain, injected when relevant. |
 
 **These are complementary layers, not competitors.** Tools are how the agent *acts*; retrieval is how it gets the right *facts*; procedures are how it follows a *specialized workflow*. You don't pick one — you compose them.
