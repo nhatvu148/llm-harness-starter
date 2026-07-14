@@ -67,7 +67,7 @@ task run:api                             # starts the FastAPI server
 task run:client                          # interactive client
 ```
 
-Try **"how many requests per minute can a project make?"** (answered from the retrieved docs) and **"what's 2400 plus 8% tax?"** (answered via the `calculate` tool) — both are things a bare model gets wrong or guesses.
+Try **"Which country has won the most World Cup titles?"** or **"How many Premier League goals did Haaland score in 2022–23?"** (answered from the retrieved docs) and **"What is 88,966 × 0.92?"** (answered via the `calculate` tool) — the first two ground the model in the docs, the last delegates exact math it would otherwise fumble.
 
 ---
 
@@ -122,7 +122,7 @@ The native layer lives in `src/main.cpp` + `tools/` and is entirely optional —
 │   ├── client.py       # interactive test client
 │   └── main.cpp        # optional: embed the server in a native binary
 ├── examples/
-│   └── docs/           # synthetic "Nimbus API" docs the demo answers over
+│   └── docs/           # football facts (World Cup + players) the demo answers over
 ├── tools/              # build helpers for the native-binary path
 ├── Taskfile.yml
 └── pyproject.toml
