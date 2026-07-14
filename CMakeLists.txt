@@ -10,7 +10,14 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS ON)
 
-set(Python_FIND_VIRTUALENV FIRST)
+# Use the project's virtualenv Python (if present) so the linked interpreter and
+# the site-packages loaded at runtime are the SAME version — no ABI mismatch.
+set(Python3_FIND_VIRTUALENV FIRST)
+if(EXISTS "${CMAKE_SOURCE_DIR}/.venv/bin/python")
+    set(Python3_EXECUTABLE "${CMAKE_SOURCE_DIR}/.venv/bin/python" CACHE FILEPATH "venv python" FORCE)
+elseif(EXISTS "${CMAKE_SOURCE_DIR}/.venv/Scripts/python.exe")
+    set(Python3_EXECUTABLE "${CMAKE_SOURCE_DIR}/.venv/Scripts/python.exe" CACHE FILEPATH "venv python" FORCE)
+endif()
 
 set(LIBRARY_NAME "Library" CACHE STRING "Name of the library target")
 set(EXECUTABLE_NAME "main" CACHE STRING "Name of the executable target")

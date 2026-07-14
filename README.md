@@ -67,7 +67,7 @@ task run:api                             # starts the FastAPI server
 task run:client                          # interactive client
 ```
 
-Try **"Which country has won the most World Cup titles?"** or **"How many Premier League goals did Haaland score in 2022–23?"** (answered from the retrieved docs) and **"What is 88,966 × 0.92?"** (answered via the `calculate` tool) — the first two ground the model in the docs, the last delegates exact math it would otherwise fumble.
+Try **"Which country has won the most World Cup titles?"** or **"Who won the 2014 World Cup?"** (answered from the retrieved docs) and **"What is 88,966 × 0.92?"** (answered via the `calculate` tool) — the first two ground the model in the docs, the last delegates exact math it would otherwise fumble.
 
 ---
 
@@ -104,7 +104,7 @@ This scaffold can embed the Python harness **inside a C++ executable** using the
 task up          # clean, build with CMake, run the embedded binary
 ```
 
-The native layer lives in `src/main.cpp` + `tools/` and is entirely optional — the harness runs fine as a plain Python server if you don't need it. (Wiring the new seam modules into the native build is on the roadmap; the native path currently embeds the base server.)
+`task run:tools` bundles all four seam packages into the binary, and `task up` builds and runs it — verified on macOS, where it boots the full harness and serves requests. Two honest caveats: it still loads third-party deps from `.venv` at runtime via `PYTHONPATH`, so it is **not** a fully standalone binary; and only macOS ARM64 is tested — the Windows/Linux paths exist but are unverified. The native layer is entirely optional: the harness runs fine as a plain Python server (`task run:api`) if you don't need it.
 
 ---
 
@@ -122,7 +122,7 @@ The native layer lives in `src/main.cpp` + `tools/` and is entirely optional —
 │   ├── client.py       # interactive test client
 │   └── main.cpp        # optional: embed the server in a native binary
 ├── examples/
-│   └── docs/           # football facts (World Cup + players) the demo answers over
+│   └── docs/           # FIFA World Cup facts the demo answers over
 ├── tools/              # build helpers for the native-binary path
 ├── Taskfile.yml
 └── pyproject.toml
@@ -132,7 +132,7 @@ The native layer lives in `src/main.cpp` + `tools/` and is entirely optional —
 
 ## Status
 
-**v0.1.** The four-seam harness is wired end to end: provider (OpenAI), retrieval (Chroma), tools (with an example `calculate` tool), and procedures, all composed in `src/api.py`, plus a synthetic example doc set. The optional native-binary path builds the base server.
+**v0.1.** The four-seam harness is wired end to end: provider (OpenAI), retrieval (Chroma), tools (with an example `calculate` tool), and procedures, all composed in `src/api.py`, plus an example doc set. The optional native-binary path bundles and runs the full harness on macOS.
 
 ### Roadmap
 - [x] Provider interface + OpenAI default
@@ -141,8 +141,9 @@ The native layer lives in `src/main.cpp` + `tools/` and is entirely optional —
 - [x] Procedures loader + example procedures
 - [x] Generic example doc set (`examples/docs/`)
 - [x] "Extend in 3 steps" docs
+- [x] Native (C++) build bundles & runs the full harness (macOS; Python version auto-pinned to the venv)
 - [ ] Anthropic provider example (second seam implementation)
-- [ ] Wire the seam modules into the native (C++) build
+- [ ] Verify/port the native build to Windows & Linux
 - [ ] CI + a couple of tests
 
 ---

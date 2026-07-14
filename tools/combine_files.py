@@ -1,85 +1,90 @@
+"""Bundle the app's Python source into one blob for the embedded (C++) runtime.
+
+The harness is split across packages (providers/, retrieval/, tools/,
+procedures/) plus api.py. The embedded interpreter cannot see these on disk, so
+we register each module in ``sys.modules`` at runtime (its source carried as a
+string), in dependency order, then run api.py — whose imports now resolve from
+``sys.modules`` instead of the filesystem.
+
+Third-party deps (fastapi, chromadb, openai, ...) are NOT bundled here — the
+binary loads them from ``.venv/lib/.../site-packages`` via PYTHONPATH at runtime
+(see src/main.cpp).
+"""
+
+import json
 import os
-from collections import OrderedDict
 
-input_files = [
-    os.path.join("src", "api.py"),
+# Each package: (name, [submodule files in dependency order], __init__ file).
+# Submodules are registered before the package __init__ so its relative imports
+# (``from .base import ...``) resolve.
+PACKAGES = [
+    (
+        "providers",
+        ["src/providers/base.py", "src/providers/openai_provider.py"],
+        "src/providers/__init__.py",
+    ),
+    ("retrieval", ["src/retrieval/store.py"], "src/retrieval/__init__.py"),
+    ("tools", ["src/tools/registry.py"], "src/tools/__init__.py"),
+    ("procedures", ["src/procedures/loader.py"], "src/procedures/__init__.py"),
 ]
+APP_FILE = os.path.join("src", "api.py")
+OUTPUT_FILE = os.path.join("tools", "temp_combined.py")
 
-output_file = os.path.join("tools", "temp_combined.py")
-
-
-def extract_imports_and_content(file_path):
-    imports = []
-    content = []
-    in_import_block = True
-
-    try:
-        with open(file_path, "r", encoding="utf-8") as infile:
-            for line in infile:
-                stripped_line = line.strip()
-                if in_import_block and (
-                    stripped_line.startswith("import ")
-                    or stripped_line.startswith("from ")
-                ):
-                    imports.append(line.rstrip())
-                else:
-                    in_import_block = False
-                    content.append(line.rstrip())
-        return imports, content
-    except Exception as e:
-        print(f"Error reading '{file_path}': {str(e)}")
-        return [], []
+BOOTSTRAP = '''import sys as _sys
+import types as _types
 
 
-def combine_files(input_files, output_file):
-    try:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        print(f"Script running from: {script_dir}")
+def _ensure_package(name):
+    module = _types.ModuleType(name)
+    module.__name__, module.__path__, module.__package__ = name, [], name
+    _sys.modules[name] = module
+    parent, _, child = name.rpartition(".")
+    if parent:
+        setattr(_sys.modules[parent], child, module)
 
-        all_imports = OrderedDict()
-        all_contents = []
 
-        for file_path in input_files:
-            absolute_path = os.path.abspath(file_path)
-            print(f"Checking file: {absolute_path}")
+def _register_submodule(name, source):
+    module = _types.ModuleType(name)
+    module.__name__, module.__package__ = name, name.rpartition(".")[0]
+    _sys.modules[name] = module
+    exec(compile(source, name, "exec"), module.__dict__)
+    parent, _, child = name.rpartition(".")
+    setattr(_sys.modules[parent], child, module)
 
-            if not os.path.exists(absolute_path):
-                print(f"Warning: File '{absolute_path}' not found. Skipping.")
-                continue
 
-            imports, content = extract_imports_and_content(absolute_path)
-            for imp in imports:
-                all_imports[imp] = None
+def _exec_init(name, source):
+    exec(compile(source, name, "exec"), _sys.modules[name].__dict__)
+'''
 
-            if content:
-                all_contents.append((os.path.basename(file_path), content))
-                print(f"Successfully processed '{absolute_path}'")
-            else:
-                print(f"Warning: No non-import content found in '{absolute_path}'")
 
-        with open(output_file, "w", encoding="utf-8") as outfile:
-            if all_imports:
-                for imp in all_imports.keys():
-                    outfile.write(f"{imp}\n")
-                outfile.write("\n")
-                print(f"Combined {len(all_imports)} unique import statements")
+def _read(path):
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read()
 
-            files_processed = 0
-            for file_name, content in all_contents:
-                outfile.write(f"\n# ----- {file_name} ----\n")
-                for line in content:
-                    outfile.write(f"{line}\n")
-                files_processed += 1
 
-            print(
-                f"\nCombined {files_processed} files into '{os.path.abspath(output_file)}'"
+def main():
+    parts = [BOOTSTRAP, ""]
+    for pkg, subs, init in PACKAGES:
+        parts.append(f"_ensure_package({json.dumps(pkg)})")
+        for sub in subs:
+            name = f"{pkg}.{os.path.splitext(os.path.basename(sub))[0]}"
+            parts.append(
+                f"_register_submodule({json.dumps(name)}, {json.dumps(_read(sub))})"
             )
-            if files_processed == 0:
-                print("No files were processed. Check file paths and contents.")
+        parts.append(f"_exec_init({json.dumps(pkg)}, {json.dumps(_read(init))})")
+        parts.append("")
 
-    except Exception as e:
-        print(f"Error writing to '{output_file}': {str(e)}")
+    parts.append("# ----- api.py (runs as __main__) -----")
+    parts.append(_read(APP_FILE))
+
+    os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
+    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
+        f.write("\n".join(parts))
+    print(
+        f"Bundled {len(PACKAGES)} packages + api.py -> "
+        f"'{os.path.abspath(OUTPUT_FILE)}'"
+    )
 
 
 if __name__ == "__main__":
-    combine_files(input_files, output_file)
+    main()
