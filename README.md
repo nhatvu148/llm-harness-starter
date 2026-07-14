@@ -21,16 +21,14 @@ Four swappable pieces compose into a grounded answer. RAG and procedures assembl
 
 ```mermaid
 flowchart TB
-    Q([User request]) --> RAG
-    Q --> PROC
+    Q([User request]) --> CTX
 
-    RAG["RAG — retrieves<br/>the right facts from your docs"]
-    PROC["Procedures / Skills — specializes<br/>your domain's steps and rules"]
+    subgraph CTX["Assemble the prompt"]
+        RAG["RAG — retrieves<br/>the right facts, on demand"]
+        PROC["Procedures / Skills — specializes<br/>domain steps &amp; rules"]
+    end
 
-    RAG --> M
-    PROC --> M
-
-    M["Model — thinks<br/>swappable · even a cheap one"]
+    CTX --> M["Model — thinks<br/>any model · swappable"]
     M --> D{"Needs to act?"}
     D -->|yes| T["Tools · MCP — acts<br/>run code, query, operate"]
     T -->|result| M
