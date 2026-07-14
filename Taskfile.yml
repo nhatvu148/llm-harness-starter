@@ -36,14 +36,19 @@ tasks:
     cmds:
       - rm -rf build
 
+  index:
+    desc: Index the example docs into the vector store (run once before chatting)
+    cmds:
+      - "uv run src/index.py"
+
   run:client:
     cmds:
       - "uv run src/client.py"
-  
+
   run:api:
     cmds:
       - "uv run src/api.py"
-  
+
   run:tools:
     cmds:
       - task: check-py

@@ -1,84 +1,122 @@
+"""LLM Harness Starter — composes the four layers into one endpoint.
+
+model (providers) + tools (act) + retrieval (RAG) + procedures (specialize).
+"""
+
+import json
+import os
+from typing import Dict, Generator
+
+import uvicorn
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-import os
-import uvicorn
-from dotenv import load_dotenv
-from typing import List, Dict, Generator
-from collections import deque
-from openai import OpenAI, OpenAIError
+
+from procedures import load as load_procedures
+from providers import default_provider
+from retrieval import Retriever
+from tools import call as call_tool
+from tools import definitions as tool_definitions
 
 load_dotenv()
 
+BASE_SYSTEM = (
+    "You are a helpful assistant. Use the retrieved context and the available "
+    "tools. When you use retrieved context, cite the source document. If the "
+    "answer is not in the context, say so instead of guessing."
+)
+MAX_TOOL_ROUNDS = 4
+PROCEDURES_DIR = os.path.join(os.path.dirname(__file__), "procedures")
 
-class Config:
-    TITLE = "Chatbot API"
-    SYSTEM_MESSAGE = "You are a helpful assistant."
-    MODEL = "gpt-4o-mini"
-    HISTORY_MAXLEN = 20
-    HOST = "0.0.0.0"
-    PORT = 23239
-
-
-app = FastAPI(title=Config.TITLE)
-
-conversation_history = deque(maxlen=Config.HISTORY_MAXLEN)
-
-client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+app = FastAPI(title="LLM Harness Starter")
+provider = default_provider()
+retriever = Retriever()
 
 
 class MessageRequest(BaseModel):
     message: str
 
 
-def generate_chat_stream(message: str) -> Generator[str, None, None]:
-    """Generate streaming chat response from OpenAI."""
-    try:
-        messages = [
-            {"role": "system", "content": Config.SYSTEM_MESSAGE},
-            {"role": "user", "content": message},
-        ]
+def build_messages(user_message: str) -> list[dict]:
+    """Assemble the prompt: base + procedures + retrieved context + question."""
+    context = retriever.search(user_message, k=4)
+    procedures = load_procedures(PROCEDURES_DIR, user_message)
 
-        stream = client.chat.completions.create(
-            model=Config.MODEL, messages=messages, stream=True
-        )
+    system = BASE_SYSTEM
+    if procedures:
+        system += "\n\n# Procedures\n" + procedures
+    if context:
+        joined = "\n\n".join(f"[doc {i + 1}]\n{c}" for i, c in enumerate(context))
+        system += "\n\n# Retrieved context\n" + joined
 
-        full_response = ""
-        for chunk in stream:
-            content = chunk.choices[0].delta.content
-            if content is not None:
-                full_response += content
-                yield content
+    return [
+        {"role": "system", "content": system},
+        {"role": "user", "content": user_message},
+    ]
 
-        conversation_history.append({"role": "user", "content": message})
-        conversation_history.append({"role": "assistant", "content": full_response})
 
-    except OpenAIError as e:
-        yield f"OPENAI_ERROR: {str(e)}\n\n"
-    except Exception as e:
-        yield f"ERROR: {str(e)}\n\n"
-    finally:
-        if "stream" in locals():
-            stream.close()
+def _assistant_tool_message(result: dict) -> dict:
+    """Rebuild the assistant turn that requested tool calls (for history)."""
+    return {
+        "role": "assistant",
+        "content": result["content"],
+        "tool_calls": [
+            {
+                "id": tc["id"],
+                "type": "function",
+                "function": {
+                    "name": tc["name"],
+                    "arguments": json.dumps(tc["arguments"]),
+                },
+            }
+            for tc in result["tool_calls"]
+        ],
+    }
+
+
+def run_turn(user_message: str) -> Generator[str, None, None]:
+    """Resolve any tool calls, then return the final answer."""
+    messages = build_messages(user_message)
+    tools = tool_definitions()
+
+    for _ in range(MAX_TOOL_ROUNDS):
+        result = provider.complete(messages, tools=tools)
+        if not result["tool_calls"]:
+            yield result["content"] or ""
+            return
+        messages.append(_assistant_tool_message(result))
+        for tc in result["tool_calls"]:
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tc["id"],
+                    "content": call_tool(tc["name"], tc["arguments"]),
+                }
+            )
+
+    # Tool budget exhausted — one final answer without tools.
+    yield provider.complete(messages)["content"] or ""
 
 
 @app.post("/api/chat")
-def chat_stream_endpoint(request: MessageRequest) -> StreamingResponse:
-    """Handle chat streaming endpoint."""
-    return StreamingResponse(
-        generate_chat_stream(request.message), media_type="text/event-stream"
-    )
+def chat_endpoint(request: MessageRequest) -> StreamingResponse:
+    def stream():
+        try:
+            yield from run_turn(request.message)
+        except Exception as e:  # keep the demo alive; surface the error
+            yield f"ERROR: {e}\n"
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
 
 
 @app.get("/health")
-async def health_check() -> Dict[str, str]:
-    """Health check endpoint."""
+def health_check() -> Dict[str, str]:
     return {"status": "healthy"}
 
 
 def main():
-    """Run the FastAPI application."""
-    uvicorn.run(app, host=Config.HOST, port=Config.PORT)
+    uvicorn.run(app, host="0.0.0.0", port=23239)
 
 
 if __name__ == "__main__":

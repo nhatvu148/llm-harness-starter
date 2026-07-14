@@ -1,4 +1,6 @@
 venv
+.venv/
+.chroma/
 build
 x64
 .env

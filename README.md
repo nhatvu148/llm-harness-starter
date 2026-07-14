@@ -1,105 +1,163 @@
-# Embedded API to Use LLM (e.g., OpenAI) in C++
+# LLM Harness Starter
 
-This project embeds a Python-based FastAPI application within a C++ executable to leverage large language models (LLMs) like OpenAI’s GPT models. It provides a streaming chatbot API integrated into a native C++ application, with a Python client for interaction and a set of tools for managing the embedding process.
+> A clone-and-go scaffold for building a **grounded LLM agent** — the harness, not just the model.
+> Wire up retrieval, tools, and procedures around any model, and (optionally) ship the whole thing as a **native binary**.
 
-## Features
-- **Embedded FastAPI Server**: Runs a FastAPI application within a C++ executable using the Python/C API.
-- **Streaming Chatbot**: Provides a streaming chat endpoint powered by OpenAI’s GPT models or other large language models (LLMs).
-- **Cross-Platform**: Supports macOS (ARM64) with potential for Linux and Windows compatibility.
-- **Build Automation**: Uses CMake for building and Taskfile for task management.
-- **Client**: Includes a Python client for testing the API.
-- **Code Tools**: Scripts to combine Python files and update the C++ source with embedded code.
+Most "LLM starter" repos are a thin wrapper around a chat API. The hard part isn't calling the model — it's the **harness** around it: giving a small, cheap model the right knowledge, the right tools, and the right procedure so it behaves like an expert. This scaffold gives you that harness with clean, swappable seams.
 
-## Prerequisites
-- **CMake**: 3.22 or higher
-- **Python**: 3.13
-- **C++ Compiler**: Clang++ (macOS) or equivalent
-- **Homebrew** (macOS): For installing Python and dependencies
-- **Task**: Task runner
-- **uv**: Python package manager
-- **Dependencies** (managed via `uv`):
-  - `fastapi`
-  - `uvicorn`
-  - `openai`
-  - `pydantic`
-  - `python-dotenv`
-  - `requests` (for the client)
-  - `ruff` (for linting and formatting)
+---
 
-## Installation
+## The idea: it's the harness, not the model
 
-### 1. Clone the Repository
-```bash
-git clone https://github.com/nhatvu148/cpp-rag-embed.git
-cd cpp-rag-embed
+The insight this scaffold is built on:
+
+> **A frontier model with a thin setup and a modest model with a strong harness often land in the same place.**
+
+Which means you can take a cheaper, smaller model and — with good retrieval, solid tool execution, and well-written procedures — get it to punch well above its weight. That's engineering, not a downgrade, and it's where most of the real value lives.
+
+### Three layers
+
+```
+        ┌─────────────────────────────────────────────┐
+        │  PROCEDURES + RETRIEVAL  —  "it specializes" │
+        │  RAG feeds the right facts; procedures        │
+        │  encode the how-to for your domain            │
+        │   ┌───────────────────────────────────────┐  │
+        │   │  TOOLS  —  "it acts"                   │  │
+        │   │  run code, query a DB, operate an app  │  │
+        │   │   ┌─────────────────────────────────┐  │  │
+        │   │   │  MODEL  —  "it thinks"          │  │  │
+        │   │   │  any provider, swappable        │  │  │
+        │   │   └─────────────────────────────────┘  │  │
+        │   └───────────────────────────────────────┘  │
+        └─────────────────────────────────────────────┘
+
+        Models think.  Tools act.  Retrieval + procedures specialize.
 ```
 
-### 2. Set Up Python Virtual Environment with uv
-```bash
-# Use Python 3.13 (adjust path if needed)
-brew install python@3.13
+| Layer | Role | What it does |
+|---|---|---|
+| **Model** | *thinks* | The reasoning engine. Swappable — OpenAI today, anything tomorrow. |
+| **Tools** (MCP-compatible) | *acts* | Lets the model actually DO things: run code, hit an API, operate a system. Reading a doc changes nothing — executing an action does. Tool defs use the standard JSON-schema shape, so they can be served over MCP later. |
+| **Retrieval (RAG)** | *specializes* | Semantic search feeds the model the RIGHT reference knowledge at the right moment, instead of stuffing everything into the prompt. |
+| **Procedures ("skills")** | *specializes* | Curated how-to text: the steps, rules, and gotchas of your specific domain, injected when relevant. |
 
-# Install uv via Homebrew (from uv docs: https://docs.astral.sh/uv/getting-started/installation/)
-brew install uv
+**These are complementary layers, not competitors.** Tools are how the agent *acts*; retrieval is how it gets the right *facts*; procedures are how it follows a *specialized workflow*. You don't pick one — you compose them.
 
-uv run sync
-```
+---
 
-### 3. Install Task
-```bash
-brew install go-task/tap/go-task
-```
-
-### 4. Configure Environment
-Create a .env file in the project root with your OpenAI API key:
-```bash
-echo "OPENAI_API_KEY=your-api-key-here" > .env
-```
-
-## Build and Run
-### Build the Project
+## Quickstart
 
 ```bash
-task up
-```
-This cleans the build directory, generates CMake files, compiles the project, and runs the executable.
-The server starts on http://0.0.0.0:23239.
+git clone https://github.com/nhatvu148/llm-harness-starter.git
+cd llm-harness-starter
 
-### Test with the Client
+# Python env (uv) + Task runner
+brew install uv go-task/tap/go-task     # macOS; see docs for other OSes
+uv sync
+
+# Configure
+cp .env.example .env                     # add your OPENAI_API_KEY
+
+# One-time: embed the example docs into the vector store
+task index                               # downloads a small embedding model on first run
+
+# Run the harness server, then chat with it (two terminals)
+task run:api                             # starts the FastAPI server
+task run:client                          # interactive client
+```
+
+Try **"how many requests per minute can a project make?"** (answered from the retrieved docs) and **"what's 2400 plus 8% tax?"** (answered via the `calculate` tool) — both are things a bare model gets wrong or guesses.
+
+---
+
+## The four swappable seams
+
+Each layer sits behind a thin interface with **one working default**. Swap a default without touching the rest.
+
+| Seam | Default | Swap to |
+|---|---|---|
+| **Provider** (`src/providers/`) | OpenAI (`gpt-4o-mini`) | Anthropic, a local model, … |
+| **Retrieval** (`src/retrieval/`) | Chroma (local, persistent) | Qdrant, pgvector, … |
+| **Tools** (`src/tools/`) | one example tool (`calculate`) | your own tools |
+| **Procedures** (`src/procedures/`) | example markdown policies | your domain's how-to |
+
+---
+
+## Extend it in 3 steps
+
+**Add reference docs (RAG):** drop `.md` / `.txt` files into `examples/docs/`, run `task index`. They're now retrievable.
+
+**Add a tool:** write a function in `src/tools/registry.py` and decorate it with `@tool(...)`. The model can now call it.
+
+**Add a procedure:** write a markdown file in `src/procedures/` describing the steps/rules for a task. It's injected into the prompt.
+
+**Swap the model:** change `default_provider()` in `src/providers/__init__.py` (or set `MODEL` in `.env`). Everything else is untouched.
+
+---
+
+## Optional: ship it as a native binary
+
+This scaffold can embed the Python harness **inside a C++ executable** using the Python/C API — useful when you want to distribute a single native binary without shipping source files.
 
 ```bash
-task run:client
-```
-### Taskfile Commands
-
-- task check-py: Lint and format Python code with Ruff.
-
-- task clean:venv: Remove the virtual environment.
-
-- task clean:build: Remove the build directory.
-
-- task run:client: Run the Python client.
-
-- task run:api: Run the FastAPI app standalone (for testing).
-
-- task run:tools: Check Python code, combine files, and update main.cpp.
-
-- task run:cmake: Build the project with CMake and run the executable.
-
-- task up: Clean, build, and run the project (optionally with args, e.g., task up -- -c).
-
-### API Endpoints
-- POST /api/chat: Stream a chat response.
-```bash
-Request: {"message": "Hello, how are you?"}
-Response: Streams text (e.g., "Hello! I'm just a program, so I don't have feelings, but I'm here and ready to help you. How can I assist you today?")
+task up          # clean, build with CMake, run the embedded binary
 ```
 
+The native layer lives in `src/main.cpp` + `tools/` and is entirely optional — the harness runs fine as a plain Python server if you don't need it. (Wiring the new seam modules into the native build is on the roadmap; the native path currently embeds the base server.)
 
-- GET /health: Check server status.
-```bash
-Response: {"status": "healthy"}
+---
+
+## Project structure
+
 ```
+.
+├── src/
+│   ├── providers/      # model provider interface + OpenAI default   [the model]
+│   ├── retrieval/      # chunk + embed + semantic search (Chroma)    [RAG]
+│   ├── tools/          # tool registry + example tool                [acts]
+│   ├── procedures/     # curated how-to markdown, injected on demand [specializes]
+│   ├── index.py        # `task index` — embed examples/docs
+│   ├── api.py          # FastAPI server — composes the four layers
+│   ├── client.py       # interactive test client
+│   └── main.cpp        # optional: embed the server in a native binary
+├── examples/
+│   └── docs/           # synthetic "Nimbus API" docs the demo answers over
+├── tools/              # build helpers for the native-binary path
+├── Taskfile.yml
+└── pyproject.toml
+```
+
+---
+
+## Status
+
+**v0.1.** The four-seam harness is wired end to end: provider (OpenAI), retrieval (Chroma), tools (with an example `calculate` tool), and procedures, all composed in `src/api.py`, plus a synthetic example doc set. The optional native-binary path builds the base server.
+
+### Roadmap
+- [x] Provider interface + OpenAI default
+- [x] Retrieval layer (Chroma) + `task index`
+- [x] Tool registry + example tool
+- [x] Procedures loader + example procedures
+- [x] Generic example doc set (`examples/docs/`)
+- [x] "Extend in 3 steps" docs
+- [ ] Anthropic provider example (second seam implementation)
+- [ ] Wire the seam modules into the native (C++) build
+- [ ] CI + a couple of tests
+
+---
+
+## Taskfile commands
+
+- `task index` — embed the example docs into the vector store (run once)
+- `task run:api` — run the harness server
+- `task run:client` — interactive client
+- `task check-py` — lint + format (Ruff)
+- `task up` — build & run the native binary (optional native path)
+- `task clean:build` / `task clean:venv` — cleanup
+
+---
 
 ## License
-Licensed under the [MIT License](LICENSE) (see LICENSE file).
+
+MIT — see [LICENSE](LICENSE). Use it, fork it, build on it.
