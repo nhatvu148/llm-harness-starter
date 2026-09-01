@@ -75,6 +75,64 @@ Try **"Which country has won the most World Cup titles?"** or **"Who won the 201
 
 ---
 
+## Run it fully locally (no API key, no network)
+
+The model seam swaps to a local Ollama. Retrieval, tools and procedures are
+untouched.
+
+```bash
+ollama pull qwen3-coder:30b     # 18 GB — MoE, ~3B active, so it runs fast
+ollama pull bge-m3              # 1.2 GB — multilingual embeddings
+
+export PROVIDER=ollama MODEL=qwen3-coder:30b EMBED_MODEL=bge-m3
+task index                      # embeds locally now
+task api                        # then chat as usual
+```
+
+`PROVIDER` unset keeps the OpenAI default, so existing setups are unaffected.
+
+### What the local provider does differently, and why
+
+Each of these is a measured failure where a capable model looked broken. All
+four are cheap to get wrong and expensive to diagnose.
+
+**It calls `/api/chat`, not `/v1/chat/completions`.** Ollama's
+OpenAI-compatibility layer can hand back the model's raw tool-call markup as
+assistant *content* with `tool_calls` empty, while the native endpoint parses
+the same response properly. Measured on Ollama 0.33.0 with `qwen3-coder:30b`:
+identical request, one parses it, the other does not.
+
+**It sets `num_ctx` explicitly (default 32768).** Ollama defaults to **4096**.
+A system prompt plus tool schemas plus one retrieved passage exceeds that before
+the model has room to answer, and the output degrades in a way that reads as low
+model quality. A whole "we tried Ollama and it was bad" verdict traced to this
+one default.
+
+**It recovers tool calls from raw markup.** Whether the template parses them is
+not reliable — with no system prompt at all, one question parsed cleanly and
+another leaked `<function=name><parameter=k>v</parameter></function>` as
+content. A loop reading only `tool_calls` treats that as a final answer and
+stops on step one.
+
+**It adds no system prompt.** Instruction text measurably suppressed structured
+tool calling for `qwen3-coder`. Behavioural guidance belongs in tool
+*descriptions*, which the template injects properly. Small models are especially
+sensitive: one emitted tool calls against three hand-written stub schemas and
+*nothing* against the same three tools carrying full MCP schemas — 1.7× the
+payload, so it was shape, not size. Keep schemas required-params-only with
+one-line descriptions.
+
+**It refuses to run against a non-loopback host**, and tells you what to
+`ollama pull` when a model is missing, rather than surfacing a 404 from inside a
+client library.
+
+> ⚠️ **The embedder is a schema, not a setting.** Switching it means re-indexing
+> the whole corpus — vectors from two models are not comparable, and a store
+> holding both returns nonsense rather than failing. The local default is
+> `bge-m3` because it is multilingual: measured on a documentation corpus, the
+> popular English-centric alternative scored **0.00** recall on Japanese queries
+> — a total failure, not a degradation — while `bge-m3` matched a paid API.
+
 ## The four swappable seams
 
 Each layer sits behind a thin interface with **one working default**. Swap a default without touching the rest.

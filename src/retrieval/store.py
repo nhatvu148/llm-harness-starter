@@ -28,6 +28,39 @@ def _chunk(text: str, size: int = 800) -> list[str]:
     return chunks
 
 
+def _default_embeddings(embedding_functions):
+    """OpenAI by default; Ollama when PROVIDER=ollama.
+
+    Ollama speaks the OpenAI embeddings API, so the same Chroma function works
+    for both — only the base URL and model change, and no extra dependency or
+    model download is pulled in.
+
+    NOTE THE EMBEDDER IS A SCHEMA, NOT A SETTING. Changing it means re-indexing
+    the whole corpus; vectors from two models are not comparable, and a store
+    holding both silently returns nonsense rather than failing.
+
+    Default is bge-m3 because it is multilingual. Measured on a documentation
+    corpus, the popular English-centric alternative (mxbai-embed-large) scored
+    0.00 recall on Japanese queries — a total failure, not a degradation — while
+    bge-m3 matched a paid API. If your corpus is English-only that will not
+    matter; if it is ever not, it matters enormously.
+    """
+    if os.environ.get("PROVIDER", "").strip().lower() == "ollama":
+        host = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
+        if not host.startswith("http"):
+            host = f"http://{host}"
+        return embedding_functions.OpenAIEmbeddingFunction(
+            api_key="ollama",  # required by the client, ignored by Ollama
+            api_base=f"{host}/v1",
+            model_name=os.environ.get("EMBED_MODEL", "bge-m3"),
+        )
+    # OpenAI: no local model download, so indexing never hangs on a slow link.
+    return embedding_functions.OpenAIEmbeddingFunction(
+        api_key=os.environ.get("OPENAI_API_KEY"),
+        model_name=os.environ.get("EMBED_MODEL", "text-embedding-3-small"),
+    )
+
+
 class Retriever:
     def __init__(
         self,
@@ -39,13 +72,7 @@ class Retriever:
         from chromadb.utils import embedding_functions
 
         if embedding_function is None:
-            # OpenAI embeddings: no local model download, so indexing never
-            # hangs on a slow connection. For offline use, pass
-            # embedding_functions.SentenceTransformerEmbeddingFunction(...).
-            embedding_function = embedding_functions.OpenAIEmbeddingFunction(
-                api_key=os.environ.get("OPENAI_API_KEY"),
-                model_name=os.environ.get("EMBED_MODEL", "text-embedding-3-small"),
-            )
+            embedding_function = _default_embeddings(embedding_functions)
 
         self.client = chromadb.PersistentClient(path=persist_dir)
         self.collection = self.client.get_or_create_collection(
