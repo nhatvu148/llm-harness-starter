@@ -68,7 +68,9 @@ class OllamaProvider:
 
     def __init__(self, model: str | None = None, host: str | None = None):
         self.model = model or os.environ.get("MODEL", "qwen3-coder:30b")
-        self.host = (host or os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")).rstrip("/")
+        self.host = (
+            host or os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
+        ).rstrip("/")
         if not self.host.startswith("http"):
             self.host = f"http://{self.host}"
         self.num_ctx = int(os.environ.get("NUM_CTX", "32768"))
@@ -141,8 +143,13 @@ class OllamaProvider:
             # string. Accept both so swapping the endpoint cannot break this.
             if isinstance(args, str):
                 args = json.loads(args or "{}")
-            calls.append({"id": tc.get("id") or f"call_{i}",
-                          "name": fn.get("name"), "arguments": args})
+            calls.append(
+                {
+                    "id": tc.get("id") or f"call_{i}",
+                    "name": fn.get("name"),
+                    "arguments": args,
+                }
+            )
 
         content = msg.get("content")
         if not calls:
@@ -156,10 +163,14 @@ class OllamaProvider:
     def stream(self, messages: list[Message]) -> Iterable[str]:
         req = urllib.request.Request(
             f"{self.host}/api/chat",
-            data=json.dumps({
-                "model": self.model, "messages": messages, "stream": True,
-                "options": {"num_ctx": self.num_ctx, "temperature": 0},
-            }).encode("utf-8"),
+            data=json.dumps(
+                {
+                    "model": self.model,
+                    "messages": messages,
+                    "stream": True,
+                    "options": {"num_ctx": self.num_ctx, "temperature": 0},
+                }
+            ).encode("utf-8"),
             headers={"Content-Type": "application/json"},
         )
         with urllib.request.urlopen(req, timeout=self.timeout) as r:

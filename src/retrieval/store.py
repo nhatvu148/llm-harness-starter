@@ -46,13 +46,20 @@ def _default_embeddings(embedding_functions):
     matter; if it is ever not, it matters enormously.
     """
     if os.environ.get("PROVIDER", "").strip().lower() == "ollama":
-        host = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
-        if not host.startswith("http"):
-            host = f"http://{host}"
+        model = os.environ.get("EMBED_MODEL", "bge-m3")
+        # Same check the chat provider runs, for the same reason: an un-pulled
+        # embedder otherwise surfaces as a raw HTTP error from inside Chroma's
+        # client, several layers from anything actionable. The guarantee has to
+        # cover BOTH models or it is not a guarantee.
+        from providers.ollama_provider import OllamaProvider
+
+        probe = OllamaProvider(model=model)
+        probe.assert_local()
+        probe.require_model()
         return embedding_functions.OpenAIEmbeddingFunction(
             api_key="ollama",  # required by the client, ignored by Ollama
-            api_base=f"{host}/v1",
-            model_name=os.environ.get("EMBED_MODEL", "bge-m3"),
+            api_base=f"{probe.host}/v1",
+            model_name=model,
         )
     # OpenAI: no local model download, so indexing never hangs on a slow link.
     return embedding_functions.OpenAIEmbeddingFunction(

@@ -20,7 +20,11 @@ import os
 PACKAGES = [
     (
         "providers",
-        ["src/providers/base.py", "src/providers/openai_provider.py"],
+        [
+            "src/providers/base.py",
+            "src/providers/openai_provider.py",
+            "src/providers/ollama_provider.py",
+        ],
         "src/providers/__init__.py",
     ),
     ("retrieval", ["src/retrieval/store.py"], "src/retrieval/__init__.py"),
