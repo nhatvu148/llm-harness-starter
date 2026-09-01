@@ -122,6 +122,11 @@ sensitive: one emitted tool calls against three hand-written stub schemas and
 payload, so it was shape, not size. Keep schemas required-params-only with
 one-line descriptions.
 
+**Chroma telemetry is off.** Chroma posts anonymous usage events to PostHog by
+default. Every URL in this repo's source is loopback, so the leak is invisible
+in code review — and it quietly falsifies the guarantee. Disabled for every
+provider, not just Ollama: a scaffold should not phone home.
+
 **It refuses to run against a non-loopback host**, and tells you what to
 `ollama pull` when a model is missing, rather than surfacing a 404 from inside a
 client library.

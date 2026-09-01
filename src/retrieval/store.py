@@ -81,7 +81,15 @@ class Retriever:
         if embedding_function is None:
             embedding_function = _default_embeddings(embedding_functions)
 
-        self.client = chromadb.PersistentClient(path=persist_dir)
+        # Telemetry OFF. Chroma posts anonymous usage events to PostHog by
+        # default, which is an outbound call this harness makes without the
+        # operator asking -- and it quietly falsifies the "nothing leaves the
+        # machine" guarantee the local provider exists to give. Off for every
+        # provider, not just Ollama: a scaffold should not phone home.
+        self.client = chromadb.PersistentClient(
+            path=persist_dir,
+            settings=chromadb.config.Settings(anonymized_telemetry=False),
+        )
         self.collection = self.client.get_or_create_collection(
             collection, embedding_function=embedding_function
         )
