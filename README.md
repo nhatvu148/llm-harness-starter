@@ -138,6 +138,24 @@ client library.
 > popular English-centric alternative scored **0.00** recall on Japanese queries
 > — a total failure, not a degradation — while `bge-m3` matched a paid API.
 
+### What a local setup still does not give you
+
+`qwen3-coder:30b` + `bge-m3` is the complete Ollama-native stack — but retrieval
+quality is not the same as a hosted pipeline, and it is worth knowing where.
+
+An embedder puts the right document in the top-k reliably and ranks it first far
+less often. Measured on a 5,230-chunk documentation corpus: **recall@1 0.17,
+recall@5 1.00**. The same corpus behind a reranker reached **0.83**. On a small
+corpus the gap is invisible — a 20-chunk index scores 1.00/1.00 — so test on
+something real before concluding you do not need one.
+
+⚠️ **A reranker is not another `ollama pull`.** Ollama 0.33.0 has no rerank
+endpoint (`POST /api/rerank` → 404), and the community `bge-reranker-v2-m3`
+builds are cross-encoders: they score query-document *pairs*, which `/api/embed`
+cannot express. Adding one means a second runtime — Python plus
+`sentence-transformers`, CPU is fine, ~600 MB — sitting between
+`Retriever.search` and the provider call.
+
 ## The four swappable seams
 
 Each layer sits behind a thin interface with **one working default**. Swap a default without touching the rest.
