@@ -1,6 +1,9 @@
 venv
 .venv/
 .chroma/
+.chroma*/
+chroma_db*/
+*.sqlite3
 build
 x64
 .env

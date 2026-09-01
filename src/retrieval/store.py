@@ -28,6 +28,46 @@ def _chunk(text: str, size: int = 800) -> list[str]:
     return chunks
 
 
+def _default_embeddings(embedding_functions):
+    """OpenAI by default; Ollama when PROVIDER=ollama.
+
+    Ollama speaks the OpenAI embeddings API, so the same Chroma function works
+    for both — only the base URL and model change, and no extra dependency or
+    model download is pulled in.
+
+    NOTE THE EMBEDDER IS A SCHEMA, NOT A SETTING. Changing it means re-indexing
+    the whole corpus; vectors from two models are not comparable, and a store
+    holding both silently returns nonsense rather than failing.
+
+    Default is bge-m3 because it is multilingual. Measured on a documentation
+    corpus, the popular English-centric alternative (mxbai-embed-large) scored
+    0.00 recall on Japanese queries — a total failure, not a degradation — while
+    bge-m3 matched a paid API. If your corpus is English-only that will not
+    matter; if it is ever not, it matters enormously.
+    """
+    if os.environ.get("PROVIDER", "").strip().lower() == "ollama":
+        model = os.environ.get("EMBED_MODEL", "bge-m3")
+        # Same check the chat provider runs, for the same reason: an un-pulled
+        # embedder otherwise surfaces as a raw HTTP error from inside Chroma's
+        # client, several layers from anything actionable. The guarantee has to
+        # cover BOTH models or it is not a guarantee.
+        from providers.ollama_provider import OllamaProvider
+
+        probe = OllamaProvider(model=model)
+        probe.assert_local()
+        probe.require_model()
+        return embedding_functions.OpenAIEmbeddingFunction(
+            api_key="ollama",  # required by the client, ignored by Ollama
+            api_base=f"{probe.host}/v1",
+            model_name=model,
+        )
+    # OpenAI: no local model download, so indexing never hangs on a slow link.
+    return embedding_functions.OpenAIEmbeddingFunction(
+        api_key=os.environ.get("OPENAI_API_KEY"),
+        model_name=os.environ.get("EMBED_MODEL", "text-embedding-3-small"),
+    )
+
+
 class Retriever:
     def __init__(
         self,
@@ -39,15 +79,17 @@ class Retriever:
         from chromadb.utils import embedding_functions
 
         if embedding_function is None:
-            # OpenAI embeddings: no local model download, so indexing never
-            # hangs on a slow connection. For offline use, pass
-            # embedding_functions.SentenceTransformerEmbeddingFunction(...).
-            embedding_function = embedding_functions.OpenAIEmbeddingFunction(
-                api_key=os.environ.get("OPENAI_API_KEY"),
-                model_name=os.environ.get("EMBED_MODEL", "text-embedding-3-small"),
-            )
+            embedding_function = _default_embeddings(embedding_functions)
 
-        self.client = chromadb.PersistentClient(path=persist_dir)
+        # Telemetry OFF. Chroma posts anonymous usage events to PostHog by
+        # default, which is an outbound call this harness makes without the
+        # operator asking -- and it quietly falsifies the "nothing leaves the
+        # machine" guarantee the local provider exists to give. Off for every
+        # provider, not just Ollama: a scaffold should not phone home.
+        self.client = chromadb.PersistentClient(
+            path=persist_dir,
+            settings=chromadb.config.Settings(anonymized_telemetry=False),
+        )
         self.collection = self.client.get_or_create_collection(
             collection, embedding_function=embedding_function
         )
