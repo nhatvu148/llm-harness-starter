@@ -63,6 +63,50 @@ def _recover_tool_calls(content: str) -> list[dict]:
     return out
 
 
+def _to_ollama_messages(messages: list[Message]) -> list[Message]:
+    """Translate the harness's OpenAI-shaped history into Ollama's wire format.
+
+    api.py rebuilds the assistant turn the way the OpenAI API wants it back:
+    ``tool_calls[].function.arguments`` as a JSON STRING, and tool results keyed
+    by ``tool_call_id``. Ollama's /api/chat wants ``arguments`` as an OBJECT and
+    identifies results by ``tool_name``. Posting one shape to the other endpoint
+    returns 400 Bad Request on the SECOND turn only -- the first request carries
+    no history, so a single-shot tool call looks fine and the failure appears
+    exactly when the tool result is fed back.
+
+    Translating here rather than in api.py keeps the vendor quirk inside the
+    vendor adapter, which is the point of the Provider seam: the harness should
+    not have to know which model it is talking to.
+    """
+    names: dict[str, str] = {}  # tool_call_id -> tool name, for the result turns
+    out: list[Message] = []
+    for m in messages:
+        m = dict(m)
+        if m.get("role") == "assistant" and m.get("tool_calls"):
+            calls = []
+            for tc in m["tool_calls"]:
+                fn = dict(tc.get("function") or {})
+                args = fn.get("arguments")
+                if isinstance(args, str):
+                    try:
+                        args = json.loads(args or "{}")
+                    except json.JSONDecodeError:
+                        args = {}
+                fn["arguments"] = args
+                if tc.get("id"):
+                    names[tc["id"]] = fn.get("name", "")
+                calls.append({"function": fn})
+            m["tool_calls"] = calls
+            # Ollama rejects a null content alongside tool_calls.
+            m["content"] = m.get("content") or ""
+        elif m.get("role") == "tool":
+            cid = m.pop("tool_call_id", None)
+            m.setdefault("tool_name", names.get(cid, "") or m.get("name", ""))
+            m.pop("name", None)
+        out.append(m)
+    return out
+
+
 class OllamaProvider:
     """Chat completion against a local Ollama, normalised to the Provider shape."""
 
@@ -127,7 +171,7 @@ class OllamaProvider:
     ) -> dict:
         payload: dict = {
             "model": self.model,
-            "messages": messages,
+            "messages": _to_ollama_messages(messages),
             "stream": False,
             "options": {"num_ctx": self.num_ctx, "temperature": 0},
         }
